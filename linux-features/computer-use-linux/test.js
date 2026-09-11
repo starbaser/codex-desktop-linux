@@ -8,9 +8,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const manifest = require("./feature.json");
 const descriptors = require("./patch.js");
+const { PATCH_MARKER, applyLinuxIabTerminalRoutePatch } = require("./iab-terminal-route.js");
 const {
   applyLinuxComputerUseHostPlatformPatch,
   matchesLinuxComputerUseHostPlatformContract,
@@ -26,11 +28,131 @@ test("computer-use-linux is opt-in and owns the current Linux descriptors", () =
       "ui-feature",
       "plugin-gate",
       "native-desktop-apps",
+      "iab-terminal-route",
       "ui-availability",
       "host-platform",
       "native-settings-visibility",
     ],
   );
+});
+
+function iabSessionRegistryFixture() {
+  return [
+    "class Registry{backendStatesBySessionId=new Map;sessionRoutes=new Map;pendingLocalWorkSessionIds=new Set;localWorkCodexSessionIds=new Map;debugEvents=[];delegate=null;",
+    "ensureSessionRoute(e){let t=this.sessionRoutes.get(e.conversationId);return t!=null&&this.delegate?.isWindowAlive(t.windowId)===!0}",
+    "recordDebugEvent(e){this.debugEvents.push(e)}",
+    "moveBackendSession(e,t){let n=this.backendStatesBySessionId.get(e);n!=null&&(this.backendStatesBySessionId.delete(e),n.sessionId=t,this.backendStatesBySessionId.set(t,n))}",
+    "captureSessionRouteForWindow(e){this.sessionRoutes.set(e.sessionId,e)}",
+    "canServeSession(e,t){let{sessionId:n}=t;if(this.backendStatesBySessionId.get(n)!==t)return!1;if(e.conversationId===n)return this.ensureSessionRoute(e);if(this.pendingLocalWorkSessionIds.size!==1||!this.pendingLocalWorkSessionIds.has(n)||this.sessionRoutes.has(e.conversationId))return!1;let r=this.sessionRoutes.get(n);return r==null||this.delegate?.isWindowAlive(r.windowId)!==!0?!1:(this.pendingLocalWorkSessionIds.delete(n),this.localWorkCodexSessionIds.set(n,e.conversationId),this.moveBackendSession(n,e.conversationId),this.captureSessionRouteForWindow({browserConversationId:r.browserConversationId,disposeAfterSessionActivity:r.disposeAfterSessionActivity,ownerWebContentsId:r.ownerWebContentsId,sessionId:e.conversationId,windowId:r.windowId}),this.sessionRoutes.delete(n),logger().info(`IAB_LIFECYCLE bound local Work Codex session route`,{safe:{browserConversationId:r.browserConversationId,conversationId:e.conversationId,ownerWebContentsId:r.ownerWebContentsId,windowId:r.windowId},sensitive:{}}),this.ensureSessionRoute(e))}}",
+  ].join("");
+}
+
+function evaluateIabSessionRegistry(platform = "linux") {
+  const source = applyLinuxIabTerminalRoutePatch(iabSessionRegistryFixture());
+  return vm.runInNewContext(
+    `${source};new Registry()`,
+    { logger: () => ({ info() {} }), process: { platform } },
+  );
+}
+
+test("binds an external terminal session to one live Linux IAB route", () => {
+  const registry = evaluateIabSessionRegistry();
+  const backendState = { sessionId: "client-new-thread:abc" };
+  registry.delegate = { isWindowAlive: id => id === 4 };
+  registry.backendStatesBySessionId.set(backendState.sessionId, backendState);
+  registry.sessionRoutes.set(backendState.sessionId, {
+    browserConversationId: backendState.sessionId,
+    disposeAfterSessionActivity: false,
+    ownerWebContentsId: 9,
+    sessionId: backendState.sessionId,
+    windowId: 4,
+  });
+
+  const request = { conversationId: "019f3488-ae58-74e0-b340-3dbfa38929b3" };
+  assert.equal(registry.canServeSession(request, backendState), true);
+  assert.equal(registry.canServeSession(request, backendState), true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(registry.sessionRoutes.get(request.conversationId))),
+    {
+      browserConversationId: backendState.sessionId,
+      disposeAfterSessionActivity: false,
+      ownerWebContentsId: 9,
+      sessionId: request.conversationId,
+      windowId: 4,
+    },
+  );
+  assert.equal(registry.debugEvents.length, 1);
+  assert.equal(registry.debugEvents[0].kind, PATCH_MARKER);
+});
+
+test("keeps terminal IAB route binding inactive when routes are ambiguous or non-Linux", () => {
+  for (const platform of ["linux", "darwin"]) {
+    const registry = evaluateIabSessionRegistry(platform);
+    const backendState = { sessionId: "client-new-thread:abc" };
+    registry.delegate = { isWindowAlive: () => true };
+    registry.backendStatesBySessionId.set(backendState.sessionId, backendState);
+    registry.sessionRoutes.set(backendState.sessionId, {
+      browserConversationId: backendState.sessionId,
+      ownerWebContentsId: 9,
+      sessionId: backendState.sessionId,
+      windowId: 4,
+    });
+    if (platform === "linux") {
+      registry.sessionRoutes.set("client-new-thread:def", {
+        browserConversationId: "client-new-thread:def",
+        ownerWebContentsId: 10,
+        sessionId: "client-new-thread:def",
+        windowId: 5,
+      });
+    }
+
+    const request = { conversationId: "019f3488-ae58-74e0-b340-3dbfa38929b3" };
+    assert.equal(registry.canServeSession(request, backendState), false);
+    assert.equal(registry.sessionRoutes.has(request.conversationId), false);
+    assert.equal(registry.debugEvents.length, 0);
+  }
+});
+
+test("preserves the official local Work IAB session move", () => {
+  const registry = evaluateIabSessionRegistry();
+  const backendState = { sessionId: "client-new-thread:abc" };
+  registry.delegate = { isWindowAlive: id => id === 4 };
+  registry.backendStatesBySessionId.set(backendState.sessionId, backendState);
+  registry.pendingLocalWorkSessionIds.add(backendState.sessionId);
+  registry.sessionRoutes.set(backendState.sessionId, {
+    browserConversationId: backendState.sessionId,
+    disposeAfterSessionActivity: true,
+    ownerWebContentsId: 9,
+    sessionId: backendState.sessionId,
+    windowId: 4,
+  });
+
+  const request = { conversationId: "019f3488-ae58-74e0-b340-3dbfa38929b3" };
+  assert.equal(registry.canServeSession(request, backendState), true);
+  assert.equal(backendState.sessionId, request.conversationId);
+  assert.equal(registry.backendStatesBySessionId.get(request.conversationId), backendState);
+  assert.equal(registry.localWorkCodexSessionIds.get("client-new-thread:abc"), request.conversationId);
+  assert.equal(registry.debugEvents.length, 0);
+});
+
+test("terminal IAB route patch is idempotent and rejects drifted session gates", () => {
+  const source = iabSessionRegistryFixture();
+  const patched = applyLinuxIabTerminalRoutePatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxIabTerminalRoutePatch(patched), patched);
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = warning => warnings.push(String(warning));
+  try {
+    const drifted = source.replace("pendingLocalWorkSessionIds.size!==1", "pendingLocalWorkSessionIds.size===0");
+    assert.equal(applyLinuxIabTerminalRoutePatch(drifted), drifted);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(warnings, [
+    "WARN: Expected one current IAB session-serving gate, found 0 - skipping Linux terminal IAB route patch",
+  ]);
 });
 
 test("computer-use-linux staging consumes release artifacts without invoking Cargo", () => {

@@ -16,6 +16,11 @@ In Settings → Computer use, **Any App** controls native access. Use that row t
 install or enable it on a fresh profile. Browser access is configured separately,
 and existing opt-outs remain respected.
 
+When a terminal Codex client attaches to Desktop's app-server authority, the
+feature binds that terminal session to the in-app browser only when exactly one
+live Desktop IAB route exists. It refuses ambiguous multi-window routes and
+leaves the official local Work session handoff unchanged.
+
 See the [Linux Computer Use guide](../../docs/linux-computer-use.md) for supported
 desktops, dependencies, permissions, and troubleshooting.
 
@@ -52,7 +57,9 @@ Linux does not provide saved per-app approvals through this integration.
 
 The adapter and native helpers are packaged together inside the upstream
 `unified-computer-use` plugin. The separate `computer-use` component stores the
-Any App setting and exposes no MCP tools. Upstream owns browser control.
+Any App setting and exposes no MCP tools. Upstream owns browser control; this
+feature only supplies the Linux terminal-to-IAB session binding needed by an
+attached client.
 Missing or ambiguous bundle contracts abort an enabled build.
 
 `make install-native` builds `codex-computer-use-linux` and
