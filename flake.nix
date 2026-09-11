@@ -51,7 +51,7 @@
           name = "chatgpt_${codexVersion}_${officialPackage.architecture}.deb";
         };
         flakeSourceCommit = self.rev or (self.dirtyRev or "");
-        flakeSourceRemote = "https://github.com/ilysenko/codex-desktop-linux.git";
+        flakeSourceRemote = "https://github.com/starbaser/codex-desktop-linux.git";
         flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = lib.cleanSourceWith {
           src = ./.;
