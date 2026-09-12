@@ -19,8 +19,22 @@ function surfaces(source, platform, { ready = true, enabled = true, legacy = fal
 test("unified Linux native selection uses the native setting and retains browser control", () => {
   assert.deepEqual(surfaces(selector, "linux"), ["browser"]);
   assert.deepEqual(surfaces(patch(selector), "linux"), ["browser", "computer"]);
-  assert.match(patch(selector), /\.sky=path\.default\.join\(i,`scripts`,`native-service\.mjs`\)/);
-  assert.match(patch(selector), /NODE_REPL_JS_BANNER:.*native-client\.mjs/);
+  assert.match(patch(selector), /\.sky=path\.default\.join\(process\.resourcesPath,`plugins`,`openai-bundled`,`plugins`,`unified-computer-use`,`scripts`,`native-service\.mjs`\)/);
+  assert.match(patch(selector), /NODE_REPL_JS_BANNER:.*process\.resourcesPath.*native-client\.mjs/);
+  assert.doesNotMatch(patch(selector), /join\(i,`scripts`,`native-(?:client|service)\.mjs`/);
+});
+test("native modules use immutable app resources across plugin cache replacement", () => {
+  const configure = vm.runInNewContext(`(()=>{${patch(selector)};return configure})()`, {
+    constants: { Il: "NODE_REPL_TRUSTED_SERVICES" },
+    path: { default: { join: (...parts) => parts.join("/") } },
+    pluginRoot: () => "/mutable/plugin-cache/version",
+    process: { resourcesPath: "/immutable/app/resources" },
+  });
+  const env = configure({ surfaces: ["computer"] }).env;
+  const services = JSON.parse(env.NODE_REPL_TRUSTED_SERVICES);
+  assert.equal(services.sky, "/immutable/app/resources/plugins/openai-bundled/plugins/unified-computer-use/scripts/native-service.mjs");
+  assert.match(env.NODE_REPL_JS_BANNER, /\/immutable\/app\/resources\/plugins\/openai-bundled\/plugins\/unified-computer-use\/scripts\/native-client\.mjs/);
+  assert.doesNotMatch(JSON.stringify(env), /mutable\/plugin-cache/);
 });
 test("unified prerequisites, native feature flag, and other platforms retain their gates", () => {
   const result = patch(selector);

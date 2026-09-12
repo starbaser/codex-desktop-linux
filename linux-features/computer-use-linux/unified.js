@@ -15,11 +15,11 @@ function applyUnifiedComputerUsePatch(source) {
     throw new Error("Linux unified Computer Use contract drift: partial native selector patch");
   }
   const currentServicePattern = /(?<surfaces>[\w$]+)\.surfaces\.includes\(`computer`\)&&\((?<services>[\w$]+)\.sky=`@oai\/sky\/service`\)/g;
-  const patchedServicePattern = /(?<surfaces>[\w$]+)\.surfaces\.includes\(`computer`\)&&\((?<services>[\w$]+)\.sky=(?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`scripts`,`native-service\.mjs`\)\)/g;
+  const patchedServicePattern = /(?<surfaces>[\w$]+)\.surfaces\.includes\(`computer`\)&&\((?<services>[\w$]+)\.sky=(?<path>[\w$]+)\.default\.join\(process\.resourcesPath,`plugins`,`openai-bundled`,`plugins`,`unified-computer-use`,`scripts`,`native-service\.mjs`\)\)/g;
   const currentServices = [...source.matchAll(currentServicePattern)];
   const patchedServices = [...source.matchAll(patchedServicePattern)];
   const currentBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),\[(?<constants>[\w$]+)\.Il\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
-  const patchedBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),NODE_REPL_JS_BANNER:`await import\("@oai\/cua\/tinyskyAlt"\);await\(await import\(\$\{JSON\.stringify\((?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`scripts`,`native-client\.mjs`\)\)\}\)\)\.installLinuxComputerUse\(cua\);`,\[(?<constants>[\w$]+)\.Il\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
+  const patchedBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),NODE_REPL_JS_BANNER:`await import\("@oai\/cua\/tinyskyAlt"\);await\(await import\(\$\{JSON\.stringify\((?<path>[\w$]+)\.default\.join\(process\.resourcesPath,`plugins`,`openai-bundled`,`plugins`,`unified-computer-use`,`scripts`,`native-client\.mjs`\)\)\}\)\)\.installLinuxComputerUse\(cua\);`,\[(?<constants>[\w$]+)\.Il\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
   const currentBanners = [...source.matchAll(currentBannerPattern)];
   const patchedBanners = [...source.matchAll(patchedBannerPattern)];
   const pluginRootPattern = /[\w$]+=(?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`\.mcp\.json`\)/g;
@@ -40,7 +40,7 @@ function applyUnifiedComputerUsePatch(source) {
   if (banner.groups.surfaces !== service.groups.surfaces || banner.groups.services !== service.groups.services) {
     throw new Error("Linux unified Computer Use contract drift: changed native banner relationship");
   }
-  if (patched && (service.groups.path !== root.groups.path || service.groups.pluginRoot !== root.groups.pluginRoot)) {
+  if (patched && service.groups.path !== root.groups.path) {
     throw new Error("Linux unified Computer Use contract drift: changed native service path relationship");
   }
   if (patched) return source;
@@ -49,16 +49,16 @@ function applyUnifiedComputerUsePatch(source) {
     `||${ready}&&${runtime}.platform===\`linux\`&&${features}.computerUse&&${legacy}.enabled,` +
     `${mode}=${runtime}.platform===\`linux\`?${native}:${modeValue}` +
     source.slice(match.index + match[0].length);
-  const pluginRoot = root.groups.pluginRoot;
   const pathAlias = root.groups.path;
+  const nativeScripts = `${pathAlias}.default.join(process.resourcesPath,\`plugins\`,\`openai-bundled\`,\`plugins\`,\`unified-computer-use\`,\`scripts\``;
   patchedSource = patchedSource.replace(
     currentServicePattern,
-    `${service.groups.surfaces}.surfaces.includes(\`computer\`)&&(${service.groups.services}.sky=${pathAlias}.default.join(${pluginRoot},\`scripts\`,\`native-service.mjs\`))`,
+    `${service.groups.surfaces}.surfaces.includes(\`computer\`)&&(${service.groups.services}.sky=${nativeScripts},\`native-service.mjs\`))`,
   );
   patchedSource = patchedSource.replace(
     currentBannerPattern,
     `CUA_REPL_ENABLED_SURFACES:${banner.groups.surfaces}.surfaces.join(\`,\`),` +
-      `NODE_REPL_JS_BANNER:\`await import("@oai/cua/tinyskyAlt");await(await import(\${JSON.stringify(${pathAlias}.default.join(${pluginRoot},\`scripts\`,\`native-client.mjs\`))})).installLinuxComputerUse(cua);\`,` +
+      `NODE_REPL_JS_BANNER:\`await import("@oai/cua/tinyskyAlt");await(await import(\${JSON.stringify(${nativeScripts},\`native-client.mjs\`))})).installLinuxComputerUse(cua);\`,` +
       `[${banner.groups.constants}.Il]:JSON.stringify(${banner.groups.services})`,
   );
   return patchedSource;
