@@ -52,7 +52,12 @@ export function installLinuxComputerUse(cua) {
   cua.listApps = async (options = {}) => emit(await call('list_apps'), options);
   cua.getState = async (options = {}) => {
     const state = browserState ? await browserState({ emit: false }) : { browsers: [] };
-    return emit({ ...state, apps: await cua.listApps({ emit: false }) }, options);
+    try {
+      return emit({ ...state, apps: await cua.listApps({ emit: false }) }, options);
+    } catch (error) {
+      const errors = [...(Array.isArray(state.errors) ? state.errors : []), `Native apps: ${String(error)}`];
+      return emit({ ...state, apps: Array.isArray(state.apps) ? state.apps : [], errors }, options);
+    }
   };
   cua.getApp = async (app) => {
     if (typeof app !== 'string' || !app.trim()) throw new Error('getApp requires a non-empty app id');

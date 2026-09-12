@@ -25,6 +25,33 @@ test('native client preserves browser inventory and binds native actions to sele
   } finally { globalThis.nodeRepl = original; }
 });
 
+test('native inventory failure preserves browser inventory without rejecting getState', async () => {
+  const { installLinuxComputerUse } = await import('./native-client.mjs');
+  const original = globalThis.nodeRepl;
+  globalThis.nodeRepl = {
+    write() {},
+    rpc: async () => { throw new Error('native provider unavailable'); },
+  };
+  try {
+    const cua = {
+      getState: async () => ({
+        apps: [],
+        browsers: [{ id: 'iab', tabs: [] }],
+        errors: ['Browser tabs: one stale provider'],
+      }),
+    };
+    installLinuxComputerUse(cua);
+    assert.deepEqual(await cua.getState({ emit: false }), {
+      apps: [],
+      browsers: [{ id: 'iab', tabs: [] }],
+      errors: [
+        'Browser tabs: one stale provider',
+        'Native apps: Error: native provider unavailable',
+      ],
+    });
+  } finally { globalThis.nodeRepl = original; }
+});
+
 test('trusted service validates requests before backend launch', async () => {
   const { handleRpc } = await import('./native-service.mjs');
   await assert.rejects(handleRpc({ method: 'drag', app: 'editor', params: {} }), /not supported/);
