@@ -59,6 +59,7 @@ test('mandatory browser inventory never calls the optional native provider', asy
 
 test('trusted service validates requests before backend launch', async () => {
   const { handleRpc } = await import('./native-service.mjs');
+  assert.deepEqual(await handleRpc({ type: 'setup' }), { target: 'linux', methods: [] });
   await assert.rejects(handleRpc({ method: 'drag', app: 'editor', params: {} }), /not supported/);
   await assert.rejects(handleRpc({ method: 'click', app: 'editor', params: { window_id: 22 } }), /parameter/);
   for (const params of [
