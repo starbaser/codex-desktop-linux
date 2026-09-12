@@ -14,7 +14,8 @@ test('native client preserves browser inventory and binds native actions to sele
   try {
     const cua = { getState: async () => ({ apps: [], browsers: [{ id: 'iab' }] }) };
     installLinuxComputerUse(cua);
-    assert.deepEqual(await cua.getState({ emit: false }), { apps: [{ id: 'org.example.Editor', isRunning: true }], browsers: [{ id: 'iab' }] });
+    assert.deepEqual(await cua.getState({ emit: false }), { apps: [], browsers: [{ id: 'iab' }] });
+    assert.deepEqual(await cua.listApps({ emit: false }), [{ id: 'org.example.Editor', isRunning: true }]);
     const app = await cua.getApp('org.example.Editor');
     await app.click([2, 3]);
     assert.deepEqual(calls.at(-1), ['sky', { method: 'click', app: 'org.example.Editor', params: { x: 2, y: 3, button: 'left', click_count: 1, relative: true } }]);
@@ -25,12 +26,13 @@ test('native client preserves browser inventory and binds native actions to sele
   } finally { globalThis.nodeRepl = original; }
 });
 
-test('native inventory failure preserves browser inventory without rejecting getState', async () => {
+test('mandatory browser inventory never calls the optional native provider', async () => {
   const { installLinuxComputerUse } = await import('./native-client.mjs');
   const original = globalThis.nodeRepl;
+  let rpcCalls = 0;
   globalThis.nodeRepl = {
     write() {},
-    rpc: async () => { throw new Error('native provider unavailable'); },
+    rpc: async () => { rpcCalls += 1; throw new Error('native provider unavailable'); },
   };
   try {
     const cua = {
@@ -44,11 +46,11 @@ test('native inventory failure preserves browser inventory without rejecting get
     assert.deepEqual(await cua.getState({ emit: false }), {
       apps: [],
       browsers: [{ id: 'iab', tabs: [] }],
-      errors: [
-        'Browser tabs: one stale provider',
-        'Native apps: Error: native provider unavailable',
-      ],
+      errors: ['Browser tabs: one stale provider'],
     });
+    assert.equal(rpcCalls, 0);
+    await assert.rejects(cua.listApps({ emit: false }), /native provider unavailable/);
+    assert.equal(rpcCalls, 1);
   } finally { globalThis.nodeRepl = original; }
 });
 

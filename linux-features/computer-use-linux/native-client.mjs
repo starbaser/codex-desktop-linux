@@ -50,15 +50,13 @@ export function installLinuxComputerUse(cua) {
   };
   const browserState = cua.getState?.bind(cua);
   cua.listApps = async (options = {}) => emit(await call('list_apps'), options);
-  cua.getState = async (options = {}) => {
-    const state = browserState ? await browserState({ emit: false }) : { browsers: [] };
-    try {
-      return emit({ ...state, apps: await cua.listApps({ emit: false }) }, options);
-    } catch (error) {
-      const errors = [...(Array.isArray(state.errors) ? state.errors : []), `Native apps: ${String(error)}`];
-      return emit({ ...state, apps: Array.isArray(state.apps) ? state.apps : [], errors }, options);
-    }
-  };
+  // The CUA host calls getState before every submitted action. Keep that
+  // mandatory browser inventory independent from the optional native backend;
+  // native enumeration remains available through an explicit listApps call.
+  cua.getState = async (options = {}) => emit(
+    browserState ? await browserState({ emit: false }) : { apps: [], browsers: [] },
+    options,
+  );
   cua.getApp = async (app) => {
     if (typeof app !== 'string' || !app.trim()) throw new Error('getApp requires a non-empty app id');
     const unsupported = async () => { throw new Error('This native Linux Computer Use operation is not supported'); };
