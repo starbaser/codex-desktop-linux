@@ -8,6 +8,10 @@ const settingsTarget = path.join(target, "../computer-use");
 const settingsSource = path.join(process.env.SCRIPT_DIR, "plugins/openai-bundled/plugins/computer-use");
 const mcpPath = path.join(target, ".mcp.json");
 const manifestPath = path.join(target, ".codex-plugin/plugin.json");
+const trustedRuntimeTarget = path.join(
+  process.env.INSTALL_DIR,
+  "resources/cua_node/lib/node_modules/@starbaser/codex-linux-computer-use",
+);
 let manifest;
 let marketplace;
 try {
@@ -28,10 +32,12 @@ try {
 }
 
 // The app materializes bundled plugin caches by version, not resource contents.
-manifest.version = manifest.version.replace(/-linux-native\.\d+$/, "") + "-linux-native.9";
+manifest.version = manifest.version.replace(/-linux-native\.\d+$/, "") + "-linux-native.10";
 fs.mkdirSync(path.join(target, "scripts"), { recursive: true });
+fs.mkdirSync(trustedRuntimeTarget, { recursive: true });
 for (const name of ["native-client.mjs", "native-service.mjs"]) {
   fs.copyFileSync(path.join(__dirname, name), path.join(target, "scripts", name));
+  fs.copyFileSync(path.join(__dirname, name), path.join(trustedRuntimeTarget, name));
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
