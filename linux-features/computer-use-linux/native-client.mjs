@@ -48,15 +48,31 @@ export function installLinuxComputerUse(cua) {
       ...(node.supports_editable_text ? { editable: true } : {}),
     };
   };
-  const browserState = cua.getState?.bind(cua);
+  const listBrowsers = cua.listBrowsers?.bind(cua);
+  const listTabs = cua.listTabs?.bind(cua);
   cua.listApps = async (options = {}) => emit(await call('list_apps'), options);
   // The CUA host calls getState before every submitted action. Keep that
   // mandatory browser inventory independent from the optional native backend;
   // native enumeration remains available through an explicit listApps call.
-  cua.getState = async (options = {}) => emit(
-    browserState ? await browserState({ emit: false }) : { apps: [], browsers: [] },
-    options,
-  );
+  cua.getState = async (options = {}) => {
+    if (!listBrowsers || !listTabs) return emit({ apps: [], browsers: [] }, options);
+    let browsers;
+    try { browsers = await listBrowsers({ emit: false }); }
+    catch (error) { return emit({ apps: [], browsers: [], errors: [`Browsers: ${String(error)}`] }, options); }
+    const inventory = await Promise.allSettled(browsers.map(async browser => ({
+      ...browser,
+      tabs: await listTabs({ browser: browser.id, emit: false }),
+    })));
+    const errors = inventory.flatMap((result, index) => result.status === 'rejected'
+      ? [`Browser ${browsers[index].id}: ${String(result.reason)}`] : []);
+    return emit({
+      apps: [],
+      browsers: inventory.map((result, index) => result.status === 'fulfilled'
+        ? result.value : { ...browsers[index], tabs: [] }),
+      ...(errors.length ? { errors } : {}),
+    }, options);
+  };
+  cua.initialize = cua.getState;
   cua.getApp = async (app) => {
     if (typeof app !== 'string' || !app.trim()) throw new Error('getApp requires a non-empty app id');
     const unsupported = async () => { throw new Error('This native Linux Computer Use operation is not supported'); };

@@ -12,9 +12,15 @@ test('native client preserves browser inventory and binds native actions to sele
     return { ok: true };
   }};
   try {
-    const cua = { getState: async () => ({ apps: [], browsers: [{ id: 'iab' }] }) };
+    const cua = {
+      getState: async () => { throw new Error('upstream native provider must not run'); },
+      listBrowsers: async () => [{ id: 'iab' }],
+      listTabs: async () => [{ id: 'tab-1', browserId: 'iab' }],
+    };
     installLinuxComputerUse(cua);
-    assert.deepEqual(await cua.getState({ emit: false }), { apps: [], browsers: [{ id: 'iab' }] });
+    const expectedState = { apps: [], browsers: [{ id: 'iab', tabs: [{ id: 'tab-1', browserId: 'iab' }] }] };
+    assert.deepEqual(await cua.getState({ emit: false }), expectedState);
+    assert.deepEqual(await cua.initialize({ emit: false }), expectedState);
     assert.deepEqual(await cua.listApps({ emit: false }), [{ id: 'org.example.Editor', isRunning: true }]);
     const app = await cua.getApp('org.example.Editor');
     await app.click([2, 3]);
@@ -36,17 +42,14 @@ test('mandatory browser inventory never calls the optional native provider', asy
   };
   try {
     const cua = {
-      getState: async () => ({
-        apps: [],
-        browsers: [{ id: 'iab', tabs: [] }],
-        errors: ['Browser tabs: one stale provider'],
-      }),
+      getState: async () => { throw new Error('upstream native provider must not run'); },
+      listBrowsers: async () => [{ id: 'iab' }],
+      listTabs: async () => [{ id: 'tab-1', browserId: 'iab' }],
     };
     installLinuxComputerUse(cua);
     assert.deepEqual(await cua.getState({ emit: false }), {
       apps: [],
-      browsers: [{ id: 'iab', tabs: [] }],
-      errors: ['Browser tabs: one stale provider'],
+      browsers: [{ id: 'iab', tabs: [{ id: 'tab-1', browserId: 'iab' }] }],
     });
     assert.equal(rpcCalls, 0);
     await assert.rejects(cua.listApps({ emit: false }), /native provider unavailable/);
